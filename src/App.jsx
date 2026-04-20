@@ -1,6 +1,6 @@
 // ⭐ 將您從 Google Apps Script 部署取得的 Web App URL 貼在這裡
 // 如果保持空白 ("")，系統會自動啟動「本地快取模式」，方便您在未連線資料庫時也能測試 UI
-const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyMEAxjXMloN5TrtufJ6DwRE1bLvnSbEpjuFbRHdbeD1ZbntoQA5TaOMqmpEzfLFLAh/exec"; 
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyVTAbSztTZn9Pn7r27JQIXC1HPN9z3U_xOEfC1I0zAm17tYcDtI9Mos7Q3w4SYE9Tg/exec"; 
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { 
@@ -8,7 +8,7 @@ import {
   Menu, X, AlertCircle, Trash2, AlertTriangle, ShieldCheck, 
   Lock, Calendar, ShoppingCart, Printer, FileDown, Upload,
   Filter, Settings, Tag, Users, Eye, BarChart3, Edit, FileText,
-  TrendingUp, Activity
+  TrendingUp, Activity, Bell, ExternalLink, Image as ImageIcon
 } from 'lucide-react';
 
 // === API 串接與本地雙軌模式服務 ===
@@ -18,7 +18,6 @@ const api = {
       const res = await fetch(`${GAS_API_URL}?action=getInventory`);
       return await res.json();
     } else {
-      // 本地快取模式
       const data = JSON.parse(localStorage.getItem('mockDB') || 'null');
       if (data) return data;
       const initial = {
@@ -28,7 +27,8 @@ const api = {
           { id: 'U_00000_0', name: '管理員測試', phoneLast5: '00000', role: 'admin', status: 'active' },
           { id: 'U_11111_1', name: '會員測試', phoneLast5: '11111', role: 'user', status: 'active' }
         ],
-        reservations: []
+        reservations: [],
+        news: []
       };
       localStorage.setItem('mockDB', JSON.stringify(initial));
       return initial;
@@ -84,6 +84,56 @@ const api = {
     } else {
       const db = JSON.parse(localStorage.getItem('mockDB'));
       db.items.push(item);
+      // 本地模式自動發佈一則消息 (對應後端新版欄位)
+      db.news.push({
+        id: `NW_${Date.now()}`,
+        date: new Date().toLocaleString('zh-TW', {hour12: false}),
+        title: `✨ 新器材上架：${item.name}`,
+        content: `我們新增了 ${item.qty} 件「${item.name}」(${item.type})！歡迎至器材列表查看與借用。`,
+        imageUrl: '',
+        linkUrl: '',
+        linkText: ''
+      });
+      localStorage.setItem('mockDB', JSON.stringify(db));
+    }
+  },
+  async addNews(news) {
+    if (GAS_API_URL) {
+      await fetch(GAS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'addNews', news })
+      });
+    } else {
+      const db = JSON.parse(localStorage.getItem('mockDB'));
+      db.news.push(news);
+      localStorage.setItem('mockDB', JSON.stringify(db));
+    }
+  },
+  async updateNews(news) {
+    if (GAS_API_URL) {
+      await fetch(GAS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'updateNews', news })
+      });
+    } else {
+      const db = JSON.parse(localStorage.getItem('mockDB'));
+      const idx = db.news.findIndex(n => n.id === news.id);
+      if (idx > -1) db.news[idx] = news;
+      localStorage.setItem('mockDB', JSON.stringify(db));
+    }
+  },
+  async deleteNews(newsId) {
+    if (GAS_API_URL) {
+      await fetch(GAS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'deleteNews', newsId })
+      });
+    } else {
+      const db = JSON.parse(localStorage.getItem('mockDB'));
+      db.news = db.news.filter(n => n.id !== newsId);
       localStorage.setItem('mockDB', JSON.stringify(db));
     }
   }
@@ -114,17 +164,20 @@ const globalCss = `
     background-repeat: no-repeat;
     opacity: 0.3;
     pointer-events: none;
-    z-index: 0;
+    z-index: -10;
   }
 
   body::after {
     content: "";
     position: fixed;
     inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 300 300' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='2.5' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-    opacity: 0.1; 
-    pointer-events: none; 
-    z-index: 9999;
+    /* 靜態 PNG Base64 貼圖雜訊 */
+    background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAftJREFUeNpiYKAiYARiRiBmAWJWIGYjUjMDiP8TqZkFSDMTiP8ToZkNROv/R2gWAFH/P0KzEojP/0doFgaR1f8jNMuDyOr/EZrFQcT1/wjN8iDy+n+EZgUQcf0/QrMqiLj+H6FZFURe/4/QrA4ir/9HaNYAkdf/IzRrgMjr/xGaNUDk9f8IzVog8vp/hGYtEHn9P0KzDoi8/h+hWQdEXv+P0KwHIq//R2jWA5HX/yM064PI6/8Rmg1A5PX/CM0GIPL6f4RmQxB5/T9CsyGIvP4foVkfRF7/j9BMEGz//xGaCUDk9f8IzQQh8vp/hGaCEHn9P0IzQYi8/h+hmSBEVv+P0EwQIq//R2gmCJHX/yM0E4TI6/8RmglC5PX/CM0EIfL6f4RmghB5/T9CM0GIvP4foZkgRF7/j9BMEEKG/4/QTBAir/9HaCYIkdf/IzQThMjr/xGaCULk9f8IzQQh8vp/hGaCEHn9P0IzQQh5/T9CM0GIvP4foZkgRF7/j9BMEEKG/4/QTBAir/9HaCYIkdf/IzQThMjr/xGaCULk9f8IzQQh8vp/hGaCEHn9P0IzQYis/h+hmSBEVv+P0EwQIq//R2gWAAgwAIt15XwJzE1aAAAAAElFTkSuQmCC");
+    background-repeat: repeat;
+    opacity: 0.1;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+    z-index: 0;
   }
 
   .font-tc1 { font-family: 'Noto Serif TC', 'Sekuya', serif; }
@@ -162,14 +215,12 @@ const globalCss = `
   
   ::-webkit-calendar-picker-indicator { filter: invert(1); }
 
-  /* 彈跳回饋核心類別：套用在各類按鈕上 */
   .click-pop {
     transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, color 0.2s ease !important;
     will-change: transform;
   }
   .click-pop:active:not(:disabled) {
     transform: scale(0.92) !important;
-    /* 按下時瞬間壓縮，不帶延遲 */
     transition: transform 0.05s ease-out, background-color 0.05s ease, box-shadow 0.05s ease !important;
   }
 
@@ -180,27 +231,18 @@ const globalCss = `
     100% { transform: scale(1); }
   }
 
-  /* 小視窗彈跳進場 */
   @keyframes windowPopIn {
     0% { opacity: 0; transform: scale(0.9) translateY(15px); }
     100% { opacity: 1; transform: scale(1) translateY(0); }
   }
-  .window-pop-in {
-    animation: windowPopIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-    will-change: transform, opacity;
-  }
+  .window-pop-in { animation: windowPopIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; will-change: transform, opacity; }
 
-  /* 小視窗縮小退場 */
   @keyframes windowPopOut {
     0% { opacity: 1; transform: scale(1) translateY(0); }
     100% { opacity: 0; transform: scale(0.9) translateY(-15px); }
   }
-  .window-pop-out {
-    animation: windowPopOut 0.3s cubic-bezier(0.36, 0, 0.66, -0.56) forwards;
-    will-change: transform, opacity;
-  }
+  .window-pop-out { animation: windowPopOut 0.3s cubic-bezier(0.36, 0, 0.66, -0.56) forwards; will-change: transform, opacity; }
 
-  /* 背景淡入與淡出 */
   @keyframes backdropFadeIn { 0% { opacity: 0; } 100% { opacity: 1; } }
   @keyframes backdropFadeOut { 0% { opacity: 1; } 100% { opacity: 0; } }
   .backdrop-fade-in { animation: backdropFadeIn 0.3s ease-out forwards; }
@@ -219,7 +261,10 @@ const globalCss = `
   .circle-add-btn {
     padding: 0 !important; min-width: 2.75rem !important; max-width: 2.75rem !important; width: 2.75rem !important;
     min-height: 2.75rem !important; height: 2.75rem !important; max-height: 2.75rem !important; line-height: 1 !important;
-    aspect-ratio: 1 / 1 !important; border-radius: 9999px !important; background: transparent !important;
+    aspect-ratio: 1 / 1 !important; border-radius: 9999px !important; 
+    background: rgba(5, 5, 10, 0.84) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
     border: 1px solid rgba(255,255,255,0.16) !important; color: rgba(237,247,255,0.88) !important;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 4px 14px rgba(0,0,0,0.14) !important;
     transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s, box-shadow 0.2s, border-color 0.2s, color 0.2s !important;
@@ -230,7 +275,6 @@ const globalCss = `
     background: rgba(14, 165, 233, 0.88) !important; border-color: rgba(14, 165, 233, 0.92) !important; color: #ffffff !important;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.16), 0 0 0 1px rgba(14,165,233,0.24), 0 0 14px rgba(14,165,233,0.22) !important;
     transform: scale(0.85) !important;
-    transition: transform 0.05s ease-out, background-color 0.05s, box-shadow 0.05s, border-color 0.05s !important;
   }
 
   .press-reveal-btn {
@@ -244,7 +288,6 @@ const globalCss = `
     background: rgba(14, 165, 233, 0.88) !important; border-color: rgba(14, 165, 233, 0.92) !important; color: #ffffff !important;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.16), 0 0 0 1px rgba(14,165,233,0.24), 0 0 14px rgba(14,165,233,0.22) !important;
     transform: scale(0.92) !important;
-    transition: transform 0.05s ease-out, background-color 0.05s, box-shadow 0.05s, border-color 0.05s !important;
   }
 
   .toolbar-shell { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:nowrap; min-width:0; }
@@ -255,12 +298,12 @@ const globalCss = `
   .search-fade .toolbar-morph {
     display: flex; align-items: center; justify-content: flex-end; width: 2.75rem; min-width: 2.75rem; height: 2.75rem;
     border-radius: 9999px; overflow: hidden; flex-shrink: 0; transition: width 0.34s cubic-bezier(0.22, 0.61, 0.36, 1), background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
-    background: transparent; border: 1px solid rgba(255,255,255,0.16); box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 4px 14px rgba(0,0,0,0.14);
-    position: relative; /* 加入相對定位，讓 select 可以絕對定位覆蓋 */
+    background: rgba(5, 5, 10, 0.84); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.16); box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 4px 14px rgba(0,0,0,0.14);
+    position: relative; 
   }
-  .search-fade .toolbar-morph.is-open { width: 12.5rem; background: rgba(0,0,0,0.38); border-color: rgba(255,255,255,0.2); }
+  .search-fade .toolbar-morph.is-open { width: 12.5rem; background: rgba(5, 5, 10, 0.84); border-color: rgba(255,255,255,0.2); }
   
-  /* 移除這邊原本多餘的 pointer-events: none; 讓搜尋鈕恢復點擊 */
   .search-fade .toolbar-morph-btn { width: 2.75rem; min-width: 2.75rem; height: 2.75rem; display: flex; align-items: center; justify-content: center; border: 0; background: transparent; color: rgba(237,247,255,0.88); cursor: pointer; flex-shrink: 0; padding: 0; position: relative; z-index: 1; }
   
   .search-fade .toolbar-morph-field {
@@ -270,7 +313,6 @@ const globalCss = `
   }
   .search-fade .toolbar-morph.is-open .toolbar-morph-field { width: calc(100% - 2.75rem); opacity: 1; pointer-events: auto; padding-right: 0.9rem; }
   
-  /* 針對 Select 的特殊覆蓋處理：未展開時覆蓋在按鈕上方，透明度 0 但可點擊 */
   .search-fade .toolbar-morph-select.is-closed-cover {
     position: absolute; right: 0; top: 0; width: 2.75rem; height: 2.75rem; opacity: 0 !important; pointer-events: auto !important; cursor: pointer;
   }
@@ -293,6 +335,16 @@ const isDateOverlap = (startD1, startT1, endD1, endT1, startD2, startT2, endD2, 
   return dtStart1 < dtEnd2 && dtEnd1 > dtStart2; 
 };
 
+// 檢查單筆預約是否已經逾期
+const checkIsOverdue = (res) => {
+  if (res.status !== '已借出') return false;
+  const now = new Date();
+  return res.items.some(item => {
+    const endDt = new Date(`${item.endDate}T${item.endTime || '23:59'}`);
+    return now > endDt;
+  });
+};
+
 const generateResId = (reservations) => {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -312,10 +364,8 @@ const generateResId = (reservations) => {
 
 // === 元件定義 ===
 const Button = ({ children, onClick, variant = 'primary', className = '', type = "button", ...props }) => {
-  // 將基底樣式加上 click-pop 以支援果凍彈跳回饋
   const baseStyle = "click-pop px-4 py-2 rounded-full font-medium tracking-wider flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-[13px] md:text-[15px]";
   const variants = {
-    // 增加 active 時的光暈感，配合縮放更有按壓的實感
     primary: "bg-sky-500/[0.34] text-[#edf7ff] hover:bg-sky-500/[0.28] active:bg-sky-500 active:shadow-[0_0_14px_rgba(14,165,233,0.4)] border border-sky-500/20 shadow-btn",
     secondary: "bg-white/[0.045] text-gray-200 border border-white/8 hover:bg-white/[0.07] active:bg-white/[0.05]",
     danger: "bg-[#5b4f55]/[0.34] text-[#eadfe3] hover:bg-[#5b4f55]/[0.28] active:bg-[#5b4f55]/[0.22] active:shadow-[0_0_14px_rgba(138,114,123,0.4)] border border-[#8d7a83]/[0.18] shadow-btn-danger",
@@ -338,15 +388,18 @@ const Badge = ({ status, type = 'item' }) => {
     '已借出': "bg-sky-500/[0.18] text-[#bfe6ff] border-sky-500/24",
     '已退回': "bg-white/[0.04] text-gray-400 border-white/10",
     '已歸還': "bg-white/[0.04] text-gray-400 border-white/10",
+    '已逾期': "bg-[#3b1a20]/90 text-[#ffb3b3] border-[#ff4d4d]/40 shadow-[0_0_10px_rgba(239,68,68,0.2)]",
     admin: "bg-[#4f454b]/30 text-[#cab8bf] border-[#7c666d]/22",
-    user: "bg-white/[0.04] text-gray-400 border-white/10"
+    user: "bg-white/[0.04] text-gray-400 border-white/10",
+    '最新消息': "bg-sky-500/[0.18] text-[#bfe6ff] border-sky-500/24"
   };
 
   const labels = {
     available: "在架上", borrowed: "已出借", maintenance: "維修中",
     inquire: "請洽詢", active: "使用中", returned: "已歸還",
     renewable: "可續借", '審核中': "審核中", '已借出': "已借出",
-    '已退回': "已退回", '已歸還': "已歸還", admin: "管理員", user: "一般用戶"
+    '已退回': "已退回", '已歸還': "已歸還", '已逾期': "已逾期",
+    admin: "管理員", user: "一般用戶", '最新消息': '最新消息'
   };
 
   let label = labels[status] || status;
@@ -368,7 +421,7 @@ const Modal = ({ isOpen, onClose, title, children, type = "default", size = "md"
       setIsClosing(false);
     } else if (render) {
       setIsClosing(true);
-      const timer = setTimeout(() => setRender(false), 300); // 配合 CSS 退場動畫時間
+      const timer = setTimeout(() => setRender(false), 300); 
       return () => clearTimeout(timer);
     }
   }, [isOpen, render]);
@@ -402,7 +455,7 @@ const Dialog = ({ dialog, closeDialog }) => {
       setIsClosing(false);
     } else if (render) {
       setIsClosing(true);
-      const timer = setTimeout(() => setRender(false), 300); // 配合 CSS 退場動畫時間
+      const timer = setTimeout(() => setRender(false), 300); 
       return () => clearTimeout(timer);
     }
   }, [dialog.isOpen, render]);
@@ -462,7 +515,6 @@ const LoginScreen = ({ onLogin, onRegister, authError, authSuccess, clearAuthMsg
         {authSuccess && <div className="mb-4 p-3 bg-[#61756c]/[0.34] border border-[#83958d]/[0.34] text-[#d7e7df] text-sm tracking-wider rounded-xl flex items-center gap-2"><CheckCircle size={16} />{authSuccess}</div>}
         {authError && <div className="mb-4 p-3 bg-[#66545c]/[0.34] border border-[#8a727b]/[0.34] text-[#eadce2] text-sm tracking-wider rounded-xl flex items-center gap-2"><AlertCircle size={16} />{authError}</div>}
         
-        {/* 利用 key={mode} 強制 React 重新掛載此區塊，觸發切換彈跳動畫 */}
         <form key={mode} onSubmit={handleSubmit} className="space-y-4 window-pop-in">
           {mode === 'login' ? (
              <div>
@@ -508,7 +560,6 @@ const LoginScreen = ({ onLogin, onRegister, authError, authSuccess, clearAuthMsg
             </>
           )}
           
-          {/* 已移除寫死的動畫類別，全面改吃 click-pop 果凍動畫 */}
           <Button type="submit" className="w-full mt-8 py-3 text-[15px] md:text-[17px]">
             {mode === 'login' ? '登入' : '送出註冊'}
           </Button>
@@ -534,7 +585,157 @@ const LoginScreen = ({ onLogin, onRegister, authError, authSuccess, clearAuthMsg
   );
 };
 
-const ItemCard = ({ item, reservations, onAddToCart, currentUser }) => {
+// === 新增：最新消息卡片元件 (手機版可折疊) ===
+const NewsCard = ({ n, isAdmin, onEdit, onDelete, showConfirm }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const handleDelete = (e) => {
+    e.stopPropagation();
+    showConfirm('確定要刪除這則消息嗎？', () => onDelete(n.id));
+  };
+
+  const handleEdit = (e) => {
+    e.stopPropagation();
+    onEdit(n);
+  };
+
+  return (
+    <div 
+      className="bg-white/5 backdrop-blur-xl p-5 md:p-6 rounded-3xl shadow-glass border border-white/10 hover:bg-white/10 transition-colors md:cursor-default cursor-pointer"
+      onClick={() => { if(window.innerWidth < 768) setIsExpanded(!isExpanded); }}
+    >
+      <div className="flex justify-between items-center mb-3">
+        <Badge status="最新消息" />
+        <div className="flex items-center gap-3">
+          <span className="text-gray-400 text-xs md:text-sm font-mono tracking-wider">{n.date}</span>
+          {isAdmin && (
+            <div className="flex gap-2">
+              <button onClick={handleEdit} className="click-pop text-gray-400 hover:text-sky-500 p-1 rounded hover:bg-white/10"><Edit size={16} /></button>
+              <button onClick={handleDelete} className="click-pop text-gray-400 hover:text-red-500 p-1 rounded hover:bg-white/10"><Trash2 size={16} /></button>
+            </div>
+          )}
+        </div>
+      </div>
+      
+      <h3 className="text-lg md:text-xl font-bold text-[#c9ebff] tracking-wider mb-2 leading-snug">{n.title}</h3>
+      
+      {/* 收合區塊：在手機上依據 isExpanded 展開，桌機上預設強制展開 */}
+      <div className={`transition-all duration-500 overflow-hidden ${isExpanded ? 'max-h-[5000px] opacity-100 mt-3' : 'max-h-0 opacity-0 md:max-h-[5000px] md:opacity-100 md:mt-3'}`}>
+        <p className="text-gray-300 text-sm md:text-[15px] tracking-wider leading-relaxed whitespace-pre-wrap">{n.content}</p>
+        
+        {n.imageUrl && (
+          <div className="mt-4 rounded-xl overflow-hidden border border-white/10 bg-black/40 flex justify-center">
+            {/* 圖片改為 object-contain 以保持原比例 */}
+            <img src={n.imageUrl} alt="News attachment" className="w-full max-h-[80vh] h-auto object-contain rounded-xl" />
+          </div>
+        )}
+      </div>
+      
+      {/* 連結按鈕永遠顯示，且置中對齊 */}
+      {n.linkUrl && (
+        <div className="flex justify-center mt-5" onClick={(e) => e.stopPropagation()}>
+          <a href={n.linkUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sky-400 hover:text-sky-300 font-bold text-sm tracking-wider bg-sky-500/10 px-6 py-2.5 rounded-full border border-sky-500/20 transition-all hover:bg-sky-500/20">
+            <ExternalLink size={16} /> {n.linkText || '點此前往相關連結'}
+          </a>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// === 更新：最新消息頁面 ===
+const NewsPage = ({ news = [], isAdmin, isSimulatingUser, onAddNews, onUpdateNews, onDeleteNews, showConfirm }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingNews, setEditingNews] = useState(null);
+  const [formData, setFormData] = useState({ id: '', title: '', content: '', imageUrl: '', linkUrl: '', linkText: '' });
+
+  // 排序：越新的排越上面
+  const sortedNews = useMemo(() => {
+    return [...news].sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [news]);
+
+  const handleOpenModal = (newsItem = null) => {
+    if (newsItem) {
+      setEditingNews(newsItem);
+      setFormData({ 
+        id: newsItem.id, 
+        title: newsItem.title, 
+        content: newsItem.content, 
+        imageUrl: newsItem.imageUrl || '', 
+        linkUrl: newsItem.linkUrl || '',
+        linkText: newsItem.linkText || '' 
+      });
+    } else {
+      setEditingNews(null);
+      setFormData({ id: '', title: '', content: '', imageUrl: '', linkUrl: '', linkText: '' });
+    }
+    setIsModalOpen(true);
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (editingNews) {
+      onUpdateNews(formData);
+    } else {
+      onAddNews(formData);
+    }
+    setIsModalOpen(false);
+  };
+
+  return (
+    <div className="w-full">
+      <div className="search-fade fixed left-0 right-0 z-40 bg-transparent py-3 transition-opacity" style={{top: isSimulatingUser ? "104px" : "64px"}}>
+        <div className="max-w-7xl mx-auto px-4 md:px-8 toolbar-shell">
+          <div className="toolbar-leading justify-end">
+            {isAdmin && !isSimulatingUser && (
+              <Button onClick={() => handleOpenModal()} title="發佈新動態" aria-label="發佈新動態" className="circle-add-btn shrink-0">
+                <Plus size={18} />
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="content-reveal pt-16 md:pt-20 space-y-6 relative z-10 max-w-3xl mx-auto">
+        {sortedNews.length === 0 ? (
+          <div className="text-center bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl py-16 shadow-glass px-4">
+            <p className="text-[15px] md:text-[17px] text-gray-400 tracking-wider">目前還沒有任何消息與公告。</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {sortedNews.map((n) => (
+              <NewsCard key={n.id} n={n} isAdmin={isAdmin && !isSimulatingUser} onEdit={handleOpenModal} onDelete={onDeleteNews} showConfirm={showConfirm} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingNews ? "編輯動態" : "發佈新動態"} placement="top">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input required className="w-full p-2.5 bg-black/40 text-white border border-white/20 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none shadow-inner tracking-wider" placeholder="公告標題" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
+          <textarea required rows={5} className="w-full p-2.5 bg-black/40 text-white border border-white/20 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none shadow-inner tracking-wider resize-none" placeholder="輸入公告內容..." value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} />
+          <div className="flex items-center gap-3">
+            <ImageIcon className="text-gray-400 shrink-0" size={20} />
+            <input className="w-full p-2.5 bg-black/40 text-white border border-white/20 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none shadow-inner tracking-wider text-sm" placeholder="附加圖片網址 (選填)" value={formData.imageUrl} onChange={e => setFormData({...formData, imageUrl: e.target.value})} />
+          </div>
+          <div className="flex items-center gap-3">
+            <ExternalLink className="text-gray-400 shrink-0" size={20} />
+            <input className="w-full p-2.5 bg-black/40 text-white border border-white/20 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none shadow-inner tracking-wider text-sm" placeholder="附加按鈕連結 (選填)" value={formData.linkUrl} onChange={e => setFormData({...formData, linkUrl: e.target.value})} />
+          </div>
+          {formData.linkUrl && (
+            <div className="flex items-center gap-3">
+              <Tag className="text-gray-400 shrink-0" size={20} />
+              <input className="w-full p-2.5 bg-black/40 text-white border border-white/20 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none shadow-inner tracking-wider text-sm" placeholder="自訂連結顯示名稱 (選填)" value={formData.linkText} onChange={e => setFormData({...formData, linkText: e.target.value})} />
+            </div>
+          )}
+          <Button type="submit" className="w-full justify-center mt-6">{editingNews ? "儲存變更" : "發佈公告"}</Button>
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
+const ItemCard = ({ item, reservations, onAddToCart, currentUser, userHasOverdue }) => {
   const [showMobileDetails, setShowMobileDetails] = useState(false);
   const pressTimer = useRef(null);
   const isPressing = useRef(false);
@@ -605,6 +806,11 @@ const ItemCard = ({ item, reservations, onAddToCart, currentUser }) => {
     }
   }
 
+  // 判斷是否因為逾期未還而禁用借用按鈕
+  const disableAddBtn = (displayStatus !== 'available' && displayStatus !== 'renewable') || userHasOverdue;
+  let btnTitle = displayStatus === 'available' ? '加入預約單' : (displayStatus === 'renewable' ? '申請續借' : '暫不可借用');
+  if (userHasOverdue) btnTitle = '有逾期未還器材，暫停借用功能';
+
   return (
     <div 
       className={`bg-white/5 backdrop-blur-xl rounded-3xl shadow-glass border border-white/10 p-4 md:p-6 flex flex-col hover:-translate-y-1 hover:bg-white/10 transition-all select-none ${displayStatus !== 'available' && displayStatus !== 'renewable' ? 'opacity-80' : ''}`}
@@ -628,18 +834,18 @@ const ItemCard = ({ item, reservations, onAddToCart, currentUser }) => {
                 {item.name}
               </h3>
               <button 
-                className={`circle-add-btn flex-shrink-0 flex items-center justify-center text-2xl font-bold ${displayStatus === 'available' || displayStatus === 'renewable' ? '' : 'text-gray-500 border-white/10 cursor-not-allowed opacity-60'}`}
-                disabled={displayStatus !== 'available' && displayStatus !== 'renewable'} 
+                className={`circle-add-btn flex-shrink-0 flex items-center justify-center text-2xl font-bold ${disableAddBtn ? 'text-gray-500 border-white/10 cursor-not-allowed opacity-60' : ''}`}
+                disabled={disableAddBtn} 
                 onClick={(e) => { 
                   e.stopPropagation(); 
-                  if (displayStatus === 'available' || displayStatus === 'renewable') {
+                  if (!disableAddBtn) {
                     onAddToCart && onAddToCart(item); 
                   }
                 }}
-                title={displayStatus === 'available' ? '加入預約單' : (displayStatus === 'renewable' ? '申請續借' : '暫不可借用')}
-                aria-label={displayStatus === 'available' ? '加入預約單' : (displayStatus === 'renewable' ? '申請續借' : '暫不可借用')}
+                title={btnTitle}
+                aria-label={btnTitle}
               >
-                {displayStatus === 'available' || displayStatus === 'renewable' ? <Plus size={18} strokeWidth={2.5} /> : <X size={18} strokeWidth={2.5} />}
+                {!disableAddBtn ? <Plus size={18} strokeWidth={2.5} /> : <X size={18} strokeWidth={2.5} />}
               </button>
             </div>
           </div>
@@ -674,7 +880,7 @@ const ItemCard = ({ item, reservations, onAddToCart, currentUser }) => {
   );
 };
 
-const UserDashboard = ({ items = [], itemTypes = [], reservations = [], onAddToCart, isSimulatingUser, currentUser }) => {
+const UserDashboard = ({ items = [], itemTypes = [], reservations = [], onAddToCart, isSimulatingUser, currentUser, userHasOverdue }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -683,7 +889,7 @@ const UserDashboard = ({ items = [], itemTypes = [], reservations = [], onAddToC
 
   const openSearchMorph = () => {
     setIsSearchOpen(true);
-    setIsFilterOpen(false); // 展開搜尋時，強制收攏類型選單
+    setIsFilterOpen(false); 
     requestAnimationFrame(() => searchInputRef.current?.focus());
   };
 
@@ -693,7 +899,7 @@ const UserDashboard = ({ items = [], itemTypes = [], reservations = [], onAddToC
 
   const handleFilterClick = () => {
     setIsFilterOpen(true);
-    setIsSearchOpen(false); // 展開類型選單時，強制收攏搜尋
+    setIsSearchOpen(false); 
   };
 
   const filteredItems = items.filter(item => {
@@ -704,11 +910,10 @@ const UserDashboard = ({ items = [], itemTypes = [], reservations = [], onAddToC
 
   return (
     <div className="w-full">
-      <div className="search-fade fixed left-0 right-0 z-40 bg-transparent py-3 transition-opacity" style={{top: "64px"}}>
+      <div className="search-fade fixed left-0 right-0 z-40 bg-transparent py-3 transition-opacity" style={{top: isSimulatingUser ? "104px" : "64px"}}>
         <div className="max-w-7xl mx-auto px-4 md:px-8 toolbar-shell">
           <div className="toolbar-leading">
             <div className={`toolbar-morph ${isFilterOpen ? 'is-open' : ''}`}>
-              {/* 將 pointer-events-none 單獨加在篩選鈕上，確保點擊穿透給下方的 select */}
               <button type="button" className="toolbar-morph-btn pointer-events-none" aria-label="展開類型選單">
                 <Filter size={18} />
               </button>
@@ -726,7 +931,6 @@ const UserDashboard = ({ items = [], itemTypes = [], reservations = [], onAddToC
               </select>
             </div>
             <div className={`toolbar-morph ${isSearchOpen ? 'is-open' : ''}`}>
-              {/* 拿掉之前無效的 pointer-events-auto，並讓 onClick 恢復運作 */}
               <button type="button" className="click-pop toolbar-morph-btn" onClick={openSearchMorph} aria-label="展開搜尋欄">
                 <Search size={18} />
               </button>
@@ -744,6 +948,13 @@ const UserDashboard = ({ items = [], itemTypes = [], reservations = [], onAddToC
       </div>
 
       <div className="content-reveal pt-28 md:pt-28 space-y-6 relative z-10">
+        {userHasOverdue && (
+           <div className="bg-[#4a2e35]/90 border border-[#ff4d4d]/40 px-5 py-4 rounded-3xl flex items-center gap-3 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
+             <AlertTriangle className="text-[#ffb3b3] shrink-0" size={24} />
+             <p className="text-[#ffe6e6] text-sm md:text-[15px] tracking-wider font-bold">您有逾期未還的器材！在歸還前將暫停您的借用權限。</p>
+           </div>
+        )}
+
         {filteredItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center bg-white/5 backdrop-blur-xl py-16 rounded-3xl border border-white/10 shadow-glass px-4">
             <Package size={64} className="text-gray-600 mb-4" />
@@ -761,6 +972,7 @@ const UserDashboard = ({ items = [], itemTypes = [], reservations = [], onAddToC
                 reservations={reservations} 
                 onAddToCart={onAddToCart} 
                 currentUser={currentUser}
+                userHasOverdue={userHasOverdue}
               />
             ))}
           </div>
@@ -856,7 +1068,7 @@ const AdminUsers = ({ users = [], onUpdateUser, onAddUser, showAlert }) => {
 
   const openSearchMorph = () => {
     setIsSearchOpen(true);
-    setIsFilterOpen(false); // 展開搜尋時，強制收攏類型選單
+    setIsFilterOpen(false); 
     requestAnimationFrame(() => searchInputRef.current?.focus());
   };
 
@@ -866,7 +1078,7 @@ const AdminUsers = ({ users = [], onUpdateUser, onAddUser, showAlert }) => {
 
   const handleFilterClick = () => {
     setIsFilterOpen(true);
-    setIsSearchOpen(false); // 展開類型選單時，強制收攏搜尋
+    setIsSearchOpen(false); 
   };
 
   const filteredUsers = users.filter(user => {
@@ -876,7 +1088,6 @@ const AdminUsers = ({ users = [], onUpdateUser, onAddUser, showAlert }) => {
   });
 
   const handleOpenModal = (user = null) => {
-    // 點擊新增會員時，強制收攏所有展開的常駐欄位
     setIsSearchOpen(false);
     setIsFilterOpen(false);
     if (user) {
@@ -905,7 +1116,6 @@ const AdminUsers = ({ users = [], onUpdateUser, onAddUser, showAlert }) => {
         <div className="max-w-7xl mx-auto px-4 md:px-8 toolbar-shell">
           <div className="toolbar-leading">
             <div className={`toolbar-morph ${isFilterOpen ? 'is-open' : ''}`}>
-              {/* 將 pointer-events-none 單獨加在篩選鈕上 */}
               <button type="button" className="toolbar-morph-btn pointer-events-none" aria-label="展開類型選單">
                 <Filter size={18} />
               </button>
@@ -922,7 +1132,6 @@ const AdminUsers = ({ users = [], onUpdateUser, onAddUser, showAlert }) => {
               </select>
             </div>
             <div className={`toolbar-morph ${isSearchOpen ? 'is-open' : ''}`}>
-              {/* 拿掉之前無效的 pointer-events-auto，並讓 onClick 恢復運作 */}
               <button type="button" className="click-pop toolbar-morph-btn" onClick={openSearchMorph} aria-label="展開搜尋欄">
                 <Search size={18} />
               </button>
@@ -996,25 +1205,29 @@ const ReservationCard = ({ res, isAdmin, onUpdateStatus }) => {
   const timePeriod = `${firstItem.startDate || ''} ${firstItem.startTime || '00:00'} ~ ${firstItem.endDate || ''} ${firstItem.endTime || '23:59'}`;
   const itemsStr = res.items.map(i => `${i.name} x${i.borrowQty || 1}`).join('、');
 
+  // 判斷該單是否已逾期
+  const isOverdue = checkIsOverdue(res);
+  const displayStatus = isOverdue ? '已逾期' : res.status;
+
   return (
-    <div className="bg-white/5 backdrop-blur-xl p-4 md:p-5 rounded-3xl shadow-glass border border-white/10 transition-all hover:border-sky-500/[0.24] hover:bg-white/10 hover:shadow-[0_0_18px_rgba(125,168,201,0.08)] mb-4">
+    <div className={`bg-white/5 backdrop-blur-xl p-4 md:p-5 rounded-3xl shadow-glass border transition-all hover:bg-white/10 mb-4 ${isOverdue ? 'border-[#ff4d4d]/30 hover:border-[#ff4d4d]/50 hover:shadow-[0_0_18px_rgba(239,68,68,0.15)]' : 'border-white/10 hover:border-sky-500/[0.24] hover:shadow-[0_0_18px_rgba(125,168,201,0.08)]'}`}>
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4 border-b border-white/10 pb-4">
          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-bold text-[15px] md:text-[17px] text-sky-500 tracking-wider whitespace-nowrap">{res.id}</span>
             <span className="text-gray-200 font-medium flex items-center gap-1 bg-black/40 px-2 py-1 rounded-md border border-white/10 tracking-widest text-xs md:text-sm whitespace-nowrap"><User size={14} className="text-gray-400"/>{res.userName}</span>
-            <Badge status={res.status} type="res" />
+            <Badge status={displayStatus} type="res" />
          </div>
          <div className="text-xs md:text-sm text-gray-400 font-mono tracking-wider whitespace-nowrap">申請日：{res.submitDate}</div>
       </div>
       
-      <div className="flex flex-col md:flex-row md:items-center gap-4 text-[11px] md:text-sm bg-black/20 p-3 md:p-3 rounded-xl border border-white/5 mb-4 shadow-inner">
-        <div className="text-gray-300 font-mono flex items-center gap-2 shrink-0 tracking-wider whitespace-nowrap">
-          <Calendar size={16} className="text-sky-500"/>
+      <div className={`flex flex-col md:flex-row md:items-center gap-4 text-[11px] md:text-sm bg-black/20 p-3 md:p-3 rounded-xl border mb-4 shadow-inner ${isOverdue ? 'border-[#ff4d4d]/20 text-[#ffb3b3]' : 'border-white/5'}`}>
+        <div className={`font-mono flex items-center gap-2 shrink-0 tracking-wider whitespace-nowrap ${isOverdue ? 'text-[#ffb3b3]' : 'text-gray-300'}`}>
+          <Calendar size={16} className={isOverdue ? 'text-[#ff4d4d]' : 'text-sky-500'}/>
           {timePeriod}
         </div>
         <div className="hidden md:block text-gray-600">|</div>
-        <div className="font-medium flex items-center gap-2 text-gray-200 break-all leading-relaxed tracking-wider">
-          <Package size={16} className="text-sky-500/70 shrink-0"/>
+        <div className={`font-medium flex items-center gap-2 break-all leading-relaxed tracking-wider ${isOverdue ? 'text-[#ffb3b3]' : 'text-gray-200'}`}>
+          <Package size={16} className={`shrink-0 ${isOverdue ? 'text-[#ff4d4d]/70' : 'text-sky-500/70'}`}/>
           {itemsStr}
         </div>
       </div>
@@ -1057,7 +1270,6 @@ const AdminReservations = ({ reservations = [], onUpdateStatus }) => {
 };
 
 const UserCart = ({ cart = [], onRemoveFromCart, onUpdateCartItem, onUpdateAllCartDates, onSubmitReservation }) => {
-  // 從第一個項目取得共用的全局日期
   const globalDates = cart[0] || {};
 
   return (
@@ -1068,7 +1280,6 @@ const UserCart = ({ cart = [], onRemoveFromCart, onUpdateCartItem, onUpdateAllCa
         </div>
       ) : (
         <div className="space-y-6">
-          {/* 共用借用期間卡片 */}
           <div className="bg-white/5 backdrop-blur-xl p-5 md:p-6 rounded-3xl shadow-glass border border-white/10">
             <h3 className="font-bold text-[15px] md:text-[17px] text-sky-500 mb-4 flex items-center gap-2 tracking-wider">
               <Calendar size={18}/> 借用期間設定
@@ -1092,7 +1303,6 @@ const UserCart = ({ cart = [], onRemoveFromCart, onUpdateCartItem, onUpdateAllCa
             </div>
           </div>
 
-          {/* 極簡化預約器材清單 */}
           <div className="bg-white/5 backdrop-blur-xl p-5 md:p-6 rounded-3xl shadow-glass border border-white/10">
             <h3 className="font-bold text-[15px] md:text-[17px] text-gray-200 mb-4 flex items-center gap-2 tracking-wider">
               <Package size={18}/> 預約器材清單
@@ -1141,7 +1351,7 @@ const AdminItems = ({ items = [], itemTypes = [], onAddItem, reservations = [] }
 
   const openSearchMorph = () => {
     setIsSearchOpen(true);
-    setIsFilterOpen(false); // 展開搜尋時，強制收攏類型選單
+    setIsFilterOpen(false); 
     requestAnimationFrame(() => searchInputRef.current?.focus());
   };
 
@@ -1151,7 +1361,7 @@ const AdminItems = ({ items = [], itemTypes = [], onAddItem, reservations = [] }
 
   const handleFilterClick = () => {
     setIsFilterOpen(true);
-    setIsSearchOpen(false); // 展開類型選單時，強制收攏搜尋
+    setIsSearchOpen(false); 
   };
 
   const handleSubmit = (e) => {
@@ -1173,7 +1383,6 @@ const AdminItems = ({ items = [], itemTypes = [], onAddItem, reservations = [] }
         <div className="max-w-7xl mx-auto px-4 md:px-8 toolbar-shell">
           <div className="toolbar-leading">
             <div className={`toolbar-morph ${isFilterOpen ? 'is-open' : ''}`}>
-              {/* 將 pointer-events-none 單獨加在篩選鈕上 */}
               <button type="button" className="toolbar-morph-btn pointer-events-none" aria-label="展開類型選單">
                 <Filter size={18} />
               </button>
@@ -1189,7 +1398,6 @@ const AdminItems = ({ items = [], itemTypes = [], onAddItem, reservations = [] }
               </select>
             </div>
             <div className={`toolbar-morph ${isSearchOpen ? 'is-open' : ''}`}>
-              {/* 拿掉之前無效的 pointer-events-auto，並讓 onClick 恢復運作 */}
               <button type="button" className="click-pop toolbar-morph-btn" onClick={openSearchMorph} aria-label="展開搜尋欄">
                 <Search size={18} />
               </button>
@@ -1202,7 +1410,6 @@ const AdminItems = ({ items = [], itemTypes = [], onAddItem, reservations = [] }
                 onBlur={closeSearchMorph}
               />
             </div>
-            {/* 點擊新增按鈕時，同步收攏搜尋與類型選單 */}
             <Button onClick={() => { setIsSearchOpen(false); setIsFilterOpen(false); setIsModalOpen(true); }} title="新增器材" aria-label="新增器材" className="circle-add-btn shrink-0"><Plus size={18}/></Button>
           </div>
         </div>
@@ -1264,61 +1471,43 @@ const AdminItems = ({ items = [], itemTypes = [], onAddItem, reservations = [] }
 };
 
 const SpaceLightBalls = () => {
-  // 利用 useMemo 在元件首次渲染時同步計算，避免畫面閃爍
   const elapsed = useMemo(() => {
     if (typeof sessionStorage === 'undefined') return 0;
-    
-    // 取得最初的載入時間
     let startTime = sessionStorage.getItem('lightBallsStartTime');
     if (!startTime) {
       startTime = Date.now().toString();
       sessionStorage.setItem('lightBallsStartTime', startTime);
     }
-    
-    // 計算自首次訪問以來經過的秒數
     return (Date.now() - parseInt(startTime, 10)) / 1000;
   }, []);
 
-  // 重點技巧：透過 CSS 負延遲 (negative animation-delay)，
-  // 讓瀏覽器直接將動畫「快轉」到經過的時間點，達成跨重整的無縫接續
   const delayStyle = { animationDelay: `-${elapsed}s` };
 
   const cssKeyframes = `
-    /* 光球 1: 初始位置 */
     @keyframes moveX1 { 0% { transform: translateX(18vw); } 100% { transform: translateX(65vw); } }
     @keyframes moveY1 { 0% { transform: translateY(28vh); } 100% { transform: translateY(75vh); } }
-    
-    /* 光球 2: 初始位置 */
     @keyframes moveX2 { 0% { transform: translateX(78vw); } 100% { transform: translateX(25vw); } }
     @keyframes moveY2 { 0% { transform: translateY(58vh); } 100% { transform: translateY(15vh); } }
-    
-    /* 光球 3: 初始位置 */
     @keyframes moveX3 { 0% { transform: translateX(52vw); } 100% { transform: translateX(85vw); } }
     @keyframes moveY3 { 0% { transform: translateY(76vh); } 100% { transform: translateY(25vh); } }
     
     .track-x-1 { animation: moveX1 17s infinite alternate ease-in-out; position: absolute; top:0; left:0; }
     .track-y-1 { animation: moveY1 23s infinite alternate ease-in-out; }
-    
     .track-x-2 { animation: moveX2 19s infinite alternate ease-in-out; position: absolute; top:0; left:0; }
     .track-y-2 { animation: moveY2 13s infinite alternate ease-in-out; }
-    
     .track-x-3 { animation: moveX3 14s infinite alternate ease-in-out; position: absolute; top:0; left:0; }
     .track-y-3 { animation: moveY3 29s infinite alternate ease-in-out; }
 
-    /* 電腦版的預設尺寸 */
     .ball-1 { width: 30px; height: 30px; }
     .ball-2 { width: 80px; height: 80px; }
     .ball-3 { width: 52px; height: 52px; }
     
     @media (max-width: 767px) {
-      /* 手機版的尺寸與位置微調 */
       .ball-1 { width: 36px; height: 36px; } 
       .ball-2 { width: 60px; height: 60px; } 
-      .track-x-3 { display: none; } /* 手機版隱藏第三顆球以節省效能 */
-      
+      .track-x-3 { display: none; } 
       @keyframes moveX1 { 0% { transform: translateX(24vw); } 100% { transform: translateX(75vw); } }
       @keyframes moveY1 { 0% { transform: translateY(34vh); } 100% { transform: translateY(85vh); } }
-      
       @keyframes moveX2 { 0% { transform: translateX(72vw); } 100% { transform: translateX(15vw); } }
       @keyframes moveY2 { 0% { transform: translateY(62vh); } 100% { transform: translateY(25vh); } }
     }
@@ -1328,19 +1517,16 @@ const SpaceLightBalls = () => {
     <>
       <style dangerouslySetInnerHTML={{ __html: cssKeyframes }} />
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-        {/* 將 delayStyle 套用至每一個層級，確保 X軸、Y軸與閃爍(flicker) 都處於同一條時間軸上 */}
         <div className="track-x-1" style={delayStyle}>
           <div className="track-y-1" style={delayStyle}>
             <div className="ball-1 space-light-ball flicker-1" style={delayStyle} />
           </div>
         </div>
-        
         <div className="track-x-2" style={delayStyle}>
           <div className="track-y-2" style={delayStyle}>
             <div className="ball-2 space-light-ball flicker-2" style={delayStyle} />
           </div>
         </div>
-        
         <div className="track-x-3" style={delayStyle}>
           <div className="track-y-3" style={delayStyle}>
             <div className="ball-3 space-light-ball flicker-3" style={delayStyle} />
@@ -1357,6 +1543,7 @@ export default function App() {
   const [items, setItems] = useState([]);
   const [itemTypes, setItemTypes] = useState([]);
   const [reservations, setReservations] = useState([]);
+  const [news, setNews] = useState([]);
   const [isLoading, setIsLoading] = useState(true); 
   
   const [currentUser, setCurrentUser] = useState(() => {
@@ -1368,20 +1555,40 @@ export default function App() {
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
       try {
-        const user = JSON.parse(savedUser);
-        return user.role === 'admin' ? 'admin_dashboard' : 'items';
+        JSON.parse(savedUser);
+        return 'news'; // 無論權限，預設皆為最新消息
       } catch (e) {
-        return 'items';
+        return 'news';
       }
     }
-    return 'items';
+    return 'news';
   }); 
 
   const [isSimulatingUser, setIsSimulatingUser] = useState(false);
-  const [cart, setCart] = useState([]);
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
   const [cartAnimObj, setCartAnimObj] = useState(null);
+
+  // 初始化預約車，從快取讀取該使用者的專屬購物車
+  const [cart, setCart] = useState([]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const savedCart = localStorage.getItem(`cart_${currentUser.id}`);
+      if (savedCart) {
+        try { setCart(JSON.parse(savedCart)); } catch(e){}
+      }
+    } else {
+      setCart([]);
+    }
+  }, [currentUser]);
+
+  // 當購物車變更時，隨時存入該使用者的快取中
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem(`cart_${currentUser.id}`, JSON.stringify(cart));
+    }
+  }, [cart, currentUser]);
 
   const [dialog, setDialog] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: null });
   const [pageTransitionKey, setPageTransitionKey] = useState(0);
@@ -1431,7 +1638,7 @@ export default function App() {
     };
   }, [currentUser, showAlert]);
 
-  // 載入資料 (透過 API)
+  // 載入資料
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
@@ -1441,6 +1648,7 @@ export default function App() {
         setItemTypes(data.types || []);
         setUsers(data.users || []);
         setReservations(data.reservations || []);
+        setNews(data.news || []); 
       } catch (error) {
         console.error("載入資料失敗:", error);
         showAlert("無法連接到伺服器載入資料，請稍後再試。");
@@ -1466,7 +1674,7 @@ export default function App() {
       localStorage.setItem('currentUser', JSON.stringify(user));
       localStorage.setItem('lastActivity', Date.now().toString()); 
       setIsSimulatingUser(false);
-      setActiveTab(user.role === 'admin' ? 'admin_dashboard' : 'items');
+      setActiveTab('news'); // 登入後一律先前往看消息
     } else if (matchedUsers.length > 1) setAuthError('有多位使用者使用相同密碼，請聯繫管理員');
     else setAuthError('找不到此代碼的帳號');
   };
@@ -1494,7 +1702,6 @@ export default function App() {
   const handleUpdateUser = (updatedUser) => {
     const isDuplicate = users.some(u => u.id !== updatedUser.id && u.phoneLast5 === updatedUser.phoneLast5);
     if (isDuplicate) return showAlert('手機末五碼重複！更新失敗');
-    // 若有需要，可以擴充 update API
     setUsers(users.map(u => u.id === updatedUser.id ? updatedUser : u));
     showAlert('會員資料已更新');
   };
@@ -1549,7 +1756,7 @@ export default function App() {
   const toggleSimulation = () => { 
     if (!currentUser || currentUser.role !== 'admin') return; 
     setIsSimulatingUser(!isSimulatingUser); 
-    setActiveTab(!isSimulatingUser ? 'items' : 'admin_dashboard'); 
+    setActiveTab(!isSimulatingUser ? 'news' : 'admin_dashboard'); 
   };
   
   const normalizeHourTime = (value) => {
@@ -1564,13 +1771,11 @@ export default function App() {
     let startD, startT, endD, endT;
 
     if (cart.length > 0) {
-      // 若購物車已有物品，自動繼承全局設定的時間
       startD = cart[0].startDate;
       startT = cart[0].startTime;
       endD = cart[0].endDate;
       endT = cart[0].endTime;
     } else {
-      // 第一筆物品，產生預設時間
       const now = new Date(); const nextHour = new Date(now); nextHour.setHours(now.getHours() + 1); nextHour.setMinutes(0); nextHour.setSeconds(0); nextHour.setMilliseconds(0);
       startD = `${nextHour.getFullYear()}-${String(nextHour.getMonth() + 1).padStart(2, '0')}-${String(nextHour.getDate()).padStart(2, '0')}`;
       startT = `${String(nextHour.getHours()).padStart(2, '0')}:00`;
@@ -1596,7 +1801,6 @@ export default function App() {
     setCart(c); 
   };
 
-  // 統一更新購物車內所有物品的時間
   const updateAllCartDates = (field, value) => {
     if (field === 'startTime' || field === 'endTime') value = normalizeHourTime(value);
 
@@ -1634,7 +1838,7 @@ export default function App() {
     try {
       await api.addReservation(newReservation);
       setReservations(prev => [...prev, newReservation]); 
-      setCart([]); 
+      setCart([]); // 送出成功後清空該使用者的購物車
       showAlert(`預約單已送出，請等待管理員審核。\n您的預約單號為：${newResId}`); 
       setActiveTab('my_history'); 
     } catch (e) {
@@ -1647,13 +1851,65 @@ export default function App() {
     try {
       await api.addItem(newItem);
       setItems(prev => [...prev, newItem]);
-      showAlert('上架成功');
+      
+      // 更新前端狀態 (移除 type，只保留 6 項 + id)
+      const autoNews = {
+        id: `NW_${Date.now()}`,
+        date: new Date().toLocaleString('zh-TW', {hour12: false}),
+        title: `✨ 新器材上架：${newItem.name}`,
+        content: ``,
+        imageUrl: '',
+        linkUrl: '',
+        linkText: ''
+      };
+      setNews(prev => [...prev, autoNews]);
+
+      showAlert('上架成功，且已自動發布系統公告。');
     } catch (e) {
       showAlert('上架失敗');
     }
   };
 
+  const addManualNews = async (newsForm) => {
+    const newObj = {
+      ...newsForm,
+      id: `NW_${Date.now()}`,
+      date: new Date().toLocaleString('zh-TW', {hour12: false})
+    };
+    try {
+      await api.addNews(newObj);
+      setNews(prev => [...prev, newObj]);
+      showAlert('最新消息發佈成功！');
+    } catch (e) {
+      showAlert('發佈失敗，請稍後再試。');
+    }
+  };
+
+  const handleUpdateNews = async (newsForm) => {
+    try {
+      await api.updateNews(newsForm);
+      setNews(prev => prev.map(n => n.id === newsForm.id ? newsForm : n));
+      showAlert('消息更新成功！');
+    } catch (e) {
+      showAlert('更新失敗，請稍後再試。');
+    }
+  };
+
+  const handleDeleteNews = async (newsId) => {
+    try {
+      await api.deleteNews(newsId);
+      setNews(prev => prev.filter(n => n.id !== newsId));
+      showAlert('消息已刪除！');
+    } catch (e) {
+      showAlert('刪除失敗，請稍後再試。');
+    }
+  };
+
   const userHistoryReservations = reservations.filter(r => r.userId === currentUser?.id || r.userName === currentUser?.name);
+
+  const userHasOverdue = currentUser && reservations.some(r => 
+    (r.userId === currentUser.id || r.userName === currentUser.name) && checkIsOverdue(r)
+  );
 
   let pendingCount = 0;
   if (currentUser) {
@@ -1692,13 +1948,7 @@ export default function App() {
             <div className="flex items-center gap-3 md:gap-6 h-full w-full max-w-full overflow-hidden">
               <div 
                 className="flex items-center cursor-pointer hover:drop-shadow-[0_0_10px_rgba(255,255,255,0.3)] transition-all shrink-0" 
-                onClick={() => {
-                  if (currentUser?.role === 'admin' && !isSimulatingUser) {
-                    setActiveTab('admin_dashboard');
-                  } else {
-                    setActiveTab('items');
-                  }
-                }}
+                onClick={() => setActiveTab('news')}
               >
                 <img src={LOGO_FULL_URL} alt="Logo" className="h-10 md:h-12 w-auto shrink-0 object-contain drop-shadow-[0_0_8px_rgba(14,165,233,0.5)]" />
               </div>
@@ -1729,6 +1979,9 @@ export default function App() {
                       
                       {(!currentUser || currentUser.role !== 'admin' || isSimulatingUser) ? (
                         <>
+                          <button onClick={() => setActiveTab('news')} className={`px-4 py-3 text-left font-tc1 font-bold text-xs md:text-sm tracking-widest md:tracking-wider rounded-full transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === 'news' ? 'bg-sky-500/10 text-[#c9ebff]' : 'text-gray-300 hover:bg-white/10 hover:text-white'}`}>
+                            最新消息
+                          </button>
                           <button onClick={() => setActiveTab('items')} className={`px-4 py-3 text-left font-tc1 font-bold text-xs md:text-sm tracking-widest md:tracking-wider rounded-full transition-all whitespace-nowrap ${activeTab === 'items' ? 'bg-sky-500/10 text-[#c9ebff]' : 'text-gray-300 hover:bg-white/10 hover:text-white'}`}>
                             器材列表
                           </button>
@@ -1743,6 +1996,9 @@ export default function App() {
                         </>
                       ) : (
                         <>
+                          <button onClick={() => setActiveTab('news')} className={`px-4 py-3 text-left font-tc1 font-bold text-xs md:text-sm tracking-widest md:tracking-wider rounded-full transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === 'news' ? 'bg-sky-500/10 text-[#c9ebff]' : 'text-gray-300 hover:bg-white/10 hover:text-white'}`}>
+                            最新消息
+                          </button>
                           <button onClick={() => setActiveTab('admin_dashboard')} className={`px-4 py-3 text-left font-tc1 font-bold text-xs md:text-sm tracking-widest md:tracking-wider rounded-full transition-all whitespace-nowrap ${activeTab === 'admin_dashboard' ? 'bg-sky-500/10 text-[#c9ebff]' : 'text-gray-300 hover:bg-white/10 hover:text-white'}`}>數據統計</button>
                           <button onClick={() => setActiveTab('admin_res')} className={`px-4 py-3 text-left font-tc1 font-bold text-xs md:text-sm tracking-widest md:tracking-wider rounded-full transition-all flex justify-between items-center whitespace-nowrap ${activeTab === 'admin_res' ? 'bg-sky-500/10 text-[#c9ebff]' : 'text-gray-300 hover:bg-white/10 hover:text-white'}`}>
                             預約管理
@@ -1764,16 +2020,17 @@ export default function App() {
             )}
           </header>
 
-          <main className={`flex-1 overflow-auto ${isSimulatingUser ? 'pt-[168px]' : 'pt-32'} pb-12 px-4 md:px-8 max-w-7xl mx-auto w-full z-0 relative`}>
+          <main className={`flex-1 overflow-auto ${isSimulatingUser ? 'pt-[168px]' : 'pt-24'} pb-12 px-4 md:px-8 max-w-7xl mx-auto w-full z-0 relative`}>
             <div key={`${activeTab}-${pageTransitionKey}`} className="page-reveal">
-              {activeTab === 'dashboard' && <UserDashboard items={items} itemTypes={itemTypes} reservations={reservations} onAddToCart={addToCart} isSimulatingUser={isSimulatingUser} currentUser={currentUser} />}
-              {activeTab === 'items' && <UserDashboard items={items} itemTypes={itemTypes} reservations={reservations} onAddToCart={addToCart} isSimulatingUser={isSimulatingUser} currentUser={currentUser} />}
+              {activeTab === 'dashboard' && <UserDashboard items={items} itemTypes={itemTypes} reservations={reservations} onAddToCart={addToCart} isSimulatingUser={isSimulatingUser} currentUser={currentUser} userHasOverdue={userHasOverdue} />}
+              {activeTab === 'items' && <UserDashboard items={items} itemTypes={itemTypes} reservations={reservations} onAddToCart={addToCart} isSimulatingUser={isSimulatingUser} currentUser={currentUser} userHasOverdue={userHasOverdue} />}
               
-              {/* 傳入新增的 onUpdateAllCartDates 函數 */}
+              {/* 最新消息區塊 */}
+              {activeTab === 'news' && <NewsPage news={news} isAdmin={currentUser?.role === 'admin'} isSimulatingUser={isSimulatingUser} onAddNews={addManualNews} onUpdateNews={handleUpdateNews} onDeleteNews={handleDeleteNews} showConfirm={showConfirm} />}
+
               {activeTab === 'cart' && <UserCart cart={cart} onRemoveFromCart={(idx) => setCart(cart.filter((_, i) => i !== idx))} onUpdateCartItem={updateCartItem} onUpdateAllCartDates={updateAllCartDates} onSubmitReservation={submitReservation} />}
               
               {activeTab === 'my_history' && (
-                // 加上 content-reveal 與相對定位
                 <div className="content-reveal space-y-6 relative z-10">
                   <div className="space-y-4">
                     {(userHistoryReservations && userHistoryReservations.length === 0) ? (
